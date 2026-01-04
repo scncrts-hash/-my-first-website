@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Smart Board v8 - Slider Only Brush Size</title>
+
+<style>
+body, html {
+  margin:0;
+  padding:0;
+  height:100%;
+  font-family:Arial,sans-serif;
+  background:#f0f0f0;
+  overflow:hidden;
+  touch-action:none;
+}
+.board-container {
+  position:relative;
+  width:100%;
+  height:100%;
+  background:#2c3e50;
+  overflow:hidden;
+}
+canvas {
+  width:100%;
+  height:100%;
+  cursor:crosshair;
+}
+.main-menu {
+  position:absolute;
+  top:10px;
+  left:10px;
+  z-index:10;
+}
+#toggleMenu {
+  width:30px;
+  height:30px;
+  font-size:16px;
+  border-radius:50%;
+  background:rgba(255,255,255,0.05);
+  border:none;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  cursor:pointer;
+}
+#toggleMenu:hover { background:rgba(255,255,255,0.15); }
+.sub-menu {
+  display:none;
+  margin-top:5px;
+  background:rgba(255,255,255,0.95);
+  padding:12px;
+  border-radius:8px;
+  width:220px;
+  z-index:20;
+}
+.sub-menu label {
+  display:flex;
+  align-items:center;
+  margin:8px 0;
+  font-size:14px;
+}
+.sub-menu span { width:25px; font-weight:bold; }
+.sub-menu input { margin-left:5px; flex:1; }
+</style>
+</head>
+<body>
+
+<div class="board-container" id="boardContainer">
+  <canvas id="board"></canvas>
+
+  <div class="main-menu">
+    <button id="toggleMenu">⚙️</button>
+    <div class="sub-menu" id="subMenu">
+      <label><span>1.</span>Board Color
+        <input type="color" id="boardColorPicker" value="#2c3e50">
+      </label>
+      <label><span>2.</span>Brush Color
+        <input type="color" id="colorPicker" value="#ffffff">
+      </label>
+      <label><span>3.</span>Brush Size
+        <input type="range" id="brushSizeSlider" min="1" max="50" value="5">
+      </label>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ---------------- Elements ---------------- */
+const canvas = document.getElementById('board');
+const ctx = canvas.getContext('2d');
+const boardContainer = document.getElementById('boardContainer');
+const toggleMenuBtn = document.getElementById('toggleMenu');
+const subMenu = document.getElementById('subMenu');
+
+let painting = false;
+let brushColor = document.getElementById('colorPicker').value;
+let brushSize = parseInt(document.getElementById('brushSizeSlider').value);
+let lastX = 0, lastY = 0;
+let scale = 1;
+let lastTouchDist = 0;
+let drawingData = [];
+
+/* ---------------- Canvas Resize ---------------- */
+function resizeCanvas(){
+  canvas.width = boardContainer.clientWidth;
+  canvas.height = boardContainer.clientHeight;
+  redrawCanvas();
+}
+window.addEventListener('resize', resizeCanvas);
+resizeCanvas();
+
+/* ---------------- Drawing ---------------- */
+function startPosition(x,y){ painting = true; lastX=x; lastY=y; }
+function finishPosition(){ painting=false; }
+function drawLine(x,y){
+  if(!painting) return;
+  ctx.beginPath();
+  ctx.moveTo(lastX*scale,lastY*scale);
+  ctx.lineTo(x*scale,y*scale);
+  ctx.strokeStyle = brushColor;
+  ctx.lineWidth = brushSize;
+  ctx.lineCap='round';
+  ctx.lineJoin='round';
+  ctx.stroke();
+  drawingData.push({sx:lastX,sy:lastY,ex:x,ey:y,c:brushColor,s:brushSize});
+  lastX=x; lastY=y;
+}
+function redrawCanvas(){
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  drawingData.forEach(d=>{
+    ctx.beginPath();
+    ctx.moveTo(d.sx*scale,d.sy*scale);
+    ctx.lineTo(d.ex*scale,d.ey*scale);
+    ctx.strokeStyle=d.c;
+    ctx.lineWidth=d.s;
+    ctx.lineCap='round';
+    ctx.lineJoin='round';
+    ctx.stroke();
+  });
+}
+
+/* ---------------- Mouse & Touch Events ---------------- */
+canvas.addEventListener('mousedown', e=>{
+  const r=canvas.getBoundingClientRect();
+  startPosition((e.clientX-r.left)/scale,(e.clientY-r.top)/scale);
+});
+canvas.addEventListener('mousemove', e=>{
+  const r=canvas.getBoundingClientRect();
+  drawLine((e.clientX-r.left)/scale,(e.clientY-r.top)/scale);
+});
+canvas.addEventListener('mouseup', finishPosition);
+canvas.addEventListener('mouseout', finishPosition);
+
+canvas.addEventListener('touchstart', e=>{
+  e.preventDefault();
+  if(e.touches.length===1){
+    const t=e.touches[0];
+    const r=canvas.getBoundingClientRect();
+    startPosition((t.clientX-r.left)/scale,(t.clientY-r.top)/scale);
+  }
+});
+canvas.addEventListener('touchmove', e=>{
+  e.preventDefault();
+  const r=canvas.getBoundingClientRect();
+  if(e.touches.length===2){
+    const t1=e.touches[0], t2=e.touches[1];
+    const dist=Math.hypot(t2.clientX-t1.clientX,t2.clientY-t1.clientY);
+    if(lastTouchDist){ scale *= dist/lastTouchDist; redrawCanvas(); }
+    lastTouchDist=dist;
+  } else if(e.touches.length===1){
+    const t=e.touches[0];
+    drawLine((t.clientX-r.left)/scale,(t.clientY-r.top)/scale);
+  }
+});
+canvas.addEventListener('touchend',()=>{ lastTouchDist=0; finishPosition(); });
+
+/* ---------------- Controls ---------------- */
+document.getElementById('colorPicker').addEventListener('input', e=>brushColor=e.target.value);
+document.getElementById('brushSizeSlider').addEventListener('input', e=>brushSize=parseInt(e.target.value));
+document.getElementById('boardColorPicker').addEventListener('input', e=>{
+  boardContainer.style.backgroundColor=e.target.value;
+});
+
+/* ---------------- Menu Toggle & Safe ---------------- */
+toggleMenuBtn.addEventListener('click', e=>{
+  e.stopPropagation();
+  subMenu.style.display = subMenu.style.display==='block' ? 'none' : 'block';
+});
+subMenu.addEventListener('click', e=> e.stopPropagation());
+subMenu.addEventListener('touchstart', e=> e.stopPropagation());
+
+document.addEventListener('click', e=>{
+  if(!subMenu.contains(e.target) && e.target !== toggleMenuBtn){
+    subMenu.style.display='none';
+  }
+});
+document.addEventListener('touchstart', e=>{
+  if(!subMenu.contains(e.target) && e.target !== toggleMenuBtn){
+    subMenu.style.display='none';
+  }
+});
+
+document.addEventListener('keydown', e=>{
+  if(e.key==="Escape") subMenu.style.display = 'none';
+});
+
+/* ---------------- Keyboard Arrows ---------------- */
+let cursorX = canvas.width/2, cursorY = canvas.height/2;
+const step = 10;
+function drawCursorLine(newX,newY){
+  ctx.beginPath();
+  ctx.moveTo(cursorX,cursorY);
+  ctx.lineTo(newX,newY);
+  ctx.strokeStyle = brushColor;
+  ctx.lineWidth = brushSize;
+  ctx.lineCap='round';
+  ctx.lineJoin='round';
+  ctx.stroke();
+  drawingData.push({sx:cursorX,sy:cursorY,ex:newX,ey:newY,c:brushColor,s:brushSize});
+  cursorX=newX; cursorY=newY;
+}
+document.addEventListener('keydown', e=>{
+  drawCursorLine(cursorX+(e.key==='ArrowRight'?step:e.key==='ArrowLeft'?-step:0),
+                 cursorY+(e.key==='ArrowDown'?step:e.key==='ArrowUp'?-step:0));
+});
+
+/* ---------------- Force Fullscreen ---------------- */
+function forceFullscreen(){
+  const el = boardContainer;
+  if(document.fullscreenElement) return;
+  if(el.requestFullscreen) el.requestFullscreen();
+  else if(el.webkitRequestFullscreen) el.webkitRequestFullscreen();
+  else if(el.msRequestFullscreen) el.msRequestFullscreen();
+}
+forceFullscreen();
+['click','touchstart','keydown'].forEach(ev=>{
+  document.addEventListener(ev, forceFullscreen);
+});
+window.addEventListener('orientationchange', forceFullscreen);
+</script>
+</body>
+</html>
